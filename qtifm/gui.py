@@ -134,22 +134,19 @@ class MainWindow(QMainWindow):
         tool_bar.addAction(self.save_action)
         tool_bar.addAction(self.saveas_action)
 
-        # self.statusBar().setStyleSheet('margin-bottom: 2px;')
-        self.statusBar().showMessage('Ready')
-
         # Widgets
         self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setHandleWidth(5)
+
         self.text_edit = QTextEdit()
         self.text_edit.setStyleSheet('font-family: "Monospace";')
 
-        # self.rp9_viewer = Rp9Viewer(self.config)
-        # self.file_list = QListWidget()
-        # self.file_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        # self.dir_button = QPushButton(QIcon.fromTheme('folder-open'), '', self)
-        # self.show_hidden_check = QCheckBox(_('Show hidden files'), self)
+        self.cursor_position_label = QLabel()
+        self.cursor_position_label.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
 
         # Connects
         # self.dir_button.clicked.connect(self.select_dir)
+        self.open_action.triggered.connect(self.open_file)
         self.about_action.triggered.connect(self.show_about_dialog)
         # self.settings_action.triggered.connect(self.show_settings_dialog)
         self.exit_action.triggered.connect(self.close)
@@ -159,19 +156,18 @@ class MainWindow(QMainWindow):
         self.text_edit.cursorPositionChanged.connect(self.cursor_position_changed)
 
         # Layout
-        self.setCentralWidget(self.splitter)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        central_layout = QVBoxLayout()
+        central_layout.setContentsMargins(0, 0, 0, 0)  # left, top, right, bottom
+        central_widget.setLayout(central_layout)
+        central_layout.addWidget(self.splitter)
+        self.statusBar().addWidget(self.cursor_position_label)
 
-        left_widget = QWidget()
         # left_widget.setStyleSheet('margin: 0px;')
-        self.splitter.addWidget(left_widget)
-        left_layout = QVBoxLayout()
-        left_widget.setLayout(left_layout)
+        self.splitter.addWidget(self.text_edit)
 
-        left_layout.addWidget(self.text_edit)
-        # left_layout.addWidget(self.file_list)
-        # left_layout.addWidget(self.show_hidden_check)
-
-        # self.splitter.addWidget(self.rp9_viewer)
+        self.cursor_position_changed()
 
     @pyqtSlot()
     def show_about_dialog(self):
@@ -181,8 +177,23 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def cursor_position_changed(self):
         cursor = self.text_edit.textCursor()
-        self.statusBar().showMessage(
-            'Line: ' + str(cursor.blockNumber() + 1) + ', Column: ' + str(cursor.columnNumber() + 1))
+        self.cursor_position_label.setText(
+            _('Line:') + ' ' + str(cursor.blockNumber() + 1) + ', ' + _('Column:') + ' ' + str(
+                cursor.columnNumber() + 1))
+
+    @pyqtSlot()
+    def open_file(self):
+        filename, ignore = QFileDialog.getOpenFileName(self, _('Open'), '',
+                                                       options=QFileDialog.DontUseNativeDialog)
+        if filename:
+            path = Path(filename)
+            if path.is_file():
+                try:
+                    with open(path, 'r', encoding="utf-8") as file:
+                        self.text_edit.insertPlainText(file.read())
+                        self.text_edit.setFocus()
+                except Exception as e:
+                    self.text_edit.insertPlainText(str(e))
 
     def closeEvent(self, event):
         self.config.mainwindow_witdh = self.width()
