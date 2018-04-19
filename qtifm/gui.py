@@ -86,9 +86,10 @@ class MainWindow(QMainWindow):
 
     def __init__(self, *args):
         QMainWindow.__init__(self, *args)
-        appstr = _('qtIFM')
-        self.setWindowTitle(appstr + ' ' + const.VERSION)
         self.setWindowIcon(QIcon(str(images_path.joinpath('qtifm512.png'))))
+
+        # attrubutes
+        self.current_file = None
 
         # load config
         self.config = Config()
@@ -112,11 +113,13 @@ class MainWindow(QMainWindow):
         self.save_action.setShortcut('Ctrl+S')
         self.saveas_action = QAction(QIcon.fromTheme('document-save-as'), _('Save As...'))
         self.saveas_action.setShortcut('Shift+Ctrl+S')
+        self.clear_recent_files_action = QAction(_('Clear Items'))
 
         # Menu Bar
         file_menu = self.menuBar().addMenu(_('File'))
         file_menu.addAction(self.new_action)
         file_menu.addAction(self.open_action)
+        self.recent_files_menu = file_menu.addMenu(_('Open recent'))
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.saveas_action)
         file_menu.addSeparator()
@@ -150,6 +153,7 @@ class MainWindow(QMainWindow):
         self.about_action.triggered.connect(self.show_about_dialog)
         # self.settings_action.triggered.connect(self.show_settings_dialog)
         self.exit_action.triggered.connect(self.close)
+        self.clear_recent_files_action.triggered.connect(self.clear_recent_files)
         # self.show_hidden_check.stateChanged.connect(self.update_dir)
         # self.file_list.itemDoubleClicked.connect(self.show_file)
 
@@ -167,7 +171,9 @@ class MainWindow(QMainWindow):
         # left_widget.setStyleSheet('margin: 0px;')
         self.splitter.addWidget(self.text_edit)
 
+        self.update_title()
         self.cursor_position_changed()
+        self.update_recent_files()
 
     @pyqtSlot()
     def show_about_dialog(self):
@@ -183,17 +189,73 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def open_file(self):
+        # file filter !
         filename, ignore = QFileDialog.getOpenFileName(self, _('Open'), '',
-                                                       options=QFileDialog.DontUseNativeDialog)
+                                                       options=QFileDialog.DontUseNativeDialog,
+                                                       filter='IFM files (*.ifm);;All files (*)')
         if filename:
-            path = Path(filename)
-            if path.is_file():
-                try:
-                    with open(path, 'r', encoding="utf-8") as file:
-                        self.text_edit.insertPlainText(file.read())
-                        self.text_edit.setFocus()
-                except Exception as e:
-                    self.text_edit.insertPlainText(str(e))
+            self.open_path(Path(filename))
+
+    @pyqtSlot()
+    def open_path(self, path):
+        if path is not None and path.exists():
+            self.text_edit.clear()
+            self.current_file = None
+            try:
+                with open(path, 'r', encoding="utf-8") as file:
+                    self.text_edit.insertPlainText(file.read())
+                    self.text_edit.setFocus()
+                    cursor = self.text_edit.textCursor()
+                    cursor.setPosition(0)
+                    self.text_edit.setTextCursor(cursor)
+                    self.current_file = path
+                    self.update_recent_files(path)
+            except OSError:
+                sys.stderr.write('Could not open IFM file: \'' + str(path) + '\'\n')
+                traceback.print_exc(file=sys.stderr)
+                QMessageBox.critical(self, _('Open'), _(
+                    'An error occured while opening the selected IFM file!\n'
+                    'Maybe it isn\'t an IFM file. See console output for details.'),
+                                     QMessageBox.Ok)
+            self.update_title()
+        elif path is not None:
+            QMessageBox.critical(self, _('Open'), _(
+                'The file "' + str(path) + '" doesn\'t exist!'),
+                                 QMessageBox.Ok)
+
+    def update_title(self):
+        filestr = ''
+        if self.current_file is not None:
+            try:
+                filestr = '~/' + str(self.current_file.relative_to(Path.home()).as_posix()) + ' - '
+            except ValueError:
+                filestr = str(self.current_file.as_posix()) + ' - '
+        appstr = _('qtIFM')
+        self.setWindowTitle(filestr + appstr)
+
+    def update_recent_files(self, path=None):
+        if path is not None:
+            if self.config.editor_recent_files.count(path) > 0:
+                self.config.editor_recent_files.remove(path)
+            self.config.editor_recent_files.insert(0, path)
+            if len(self.config.editor_recent_files) > const.RECENT_FILES_COUNT:
+                del self.config.editor_recent_files[-1]
+
+        self.recent_files_menu.clear()
+        if len(self.config.editor_recent_files) > 0:
+            self.recent_files_menu.setEnabled(True)
+            for path in self.config.editor_recent_files:
+                action = self.recent_files_menu.addAction(path.name)
+                action.triggered.connect(lambda l, p=path: self.open_path(p))
+            self.recent_files_menu.addSeparator()
+            self.recent_files_menu.addAction(self.clear_recent_files_action)
+        else:
+            self.recent_files_menu.setEnabled(False)
+
+    @pyqtSlot()
+    def clear_recent_files(self):
+        self.config.editor_recent_files.clear()
+        self.update_recent_files()
 
     def closeEvent(self, event):
         self.config.mainwindow_witdh = self.width()

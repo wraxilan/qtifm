@@ -5,3 +5,4 @@
 #
 
 VERSION = '0.1'
+RECENT_FILES_COUNT = 10

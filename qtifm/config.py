@@ -22,6 +22,8 @@ class Config:
         self.mainwindow_x = 0
         self.mainwindow_y = 0
 
+        self.editor_recent_files = []
+
     def load(self):
         configfile = Path.home().joinpath('.qtifm')
         if configfile.exists():
@@ -30,7 +32,7 @@ class Config:
                 with open(strfile) as json_data_file:
                     self.__parsedata(json.load(json_data_file))
 
-            except Exception:
+            except OSError:
                 sys.stderr.write('Could not read config file: \'' + strfile + '\'\n')
                 traceback.print_exc(file=sys.stderr)
 
@@ -42,6 +44,14 @@ class Config:
             self.mainwindow_x = mainwin.get('x', self.mainwindow_x)
             self.mainwindow_y = mainwin.get('y', self.mainwindow_y)
 
+        editor = data.get('editor', None)
+        if editor is not None:
+            str_files = editor.get('recent-files', [])
+            for file in str_files:
+                path = Path(file)
+                if path.is_file():
+                    self.editor_recent_files.append(path)
+
     def save(self):
         mainwin = {
             'witdh': self.mainwindow_witdh,
@@ -50,8 +60,17 @@ class Config:
             'y': self.mainwindow_y,
         }
 
+        str_files = []
+        for f in self.editor_recent_files:
+            str_files.append(str(f))
+
+        editor = {
+            'recent-files': str_files,
+        }
+
         data = {
             'mainwindow': mainwin,
+            'editor': editor,
         }
 
         configfile = Path.home().joinpath('.qtifm')
