@@ -9,16 +9,18 @@ from config import Config
 
 import gettext
 import os
+import subprocess
 import sys
 import traceback
 
 from pathlib import Path
-from PyQt5.QtGui import QColor, QIcon, QFont, QPixmap, QSyntaxHighlighter, QTextCursor, QTextCharFormat
+from PyQt5.QtGui import (QColor, QIcon, QFont, QPalette, QPixmap, QSyntaxHighlighter, QTextCursor, QTextCharFormat,
+                         QTextOption, QImage)
 from PyQt5.QtCore import pyqtSlot, Qt, QFile, QRegExp, QSize, QThread
 from PyQt5.QtWidgets import (QAbstractItemView, QAction, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSplitter, QVBoxLayout, QWidget, QFrame, QDialogButtonBox, QGridLayout, QLineEdit,
-                             QMessageBox, QTextEdit, QTableWidgetItem, QListView, QLayout)
+                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QListView, QLayout)
 
 images_path = Path(__file__).parent.joinpath('images')
 resources_path = Path(__file__).parent.joinpath('resources')
@@ -120,6 +122,7 @@ class Editor(QTextEdit):
         self.config = mainwin.config
         self.setStyleSheet('font-family: "Monospace";')
         self.highlighter = Highlighter(self.document())
+        self.setWordWrapMode(QTextOption.NoWrap)
 
         self.current_file = None
         self.current_file_name = ''
@@ -246,7 +249,6 @@ class Editor(QTextEdit):
         self.config.editor_recent_files.clear()
         self.update_state()
 
-    @pyqtSlot()
     def save_file(self, update=False):
         if self.current_file is not None:
             try:
@@ -256,21 +258,23 @@ class Editor(QTextEdit):
                     self.text_changed()
                     if update:
                         self.update_state(self.current_file)
+                    return True
             except OSError:
                 sys.stderr.write('Could not save IFM file: \'' + str(self.current_file) + '\'\n')
                 traceback.print_exc(file=sys.stderr)
                 QMessageBox.critical(self, _('Save'), _(
                     'An error occured while writing the IFM file!\n'
                     'See console output for details.'), QMessageBox.Ok)
+        return False
 
-    @pyqtSlot()
     def save_file_as(self):
         filename, ignore = QFileDialog.getSaveFileName(self.main_window, _('Save as'), '',
                                                        options=QFileDialog.DontUseNativeDialog,
                                                        filter='IFM files (*.ifm);;All files (*)')
         if filename:
             self.current_file = Path(filename)
-            self.save_file(update=True)
+            return self.save_file(update=True)
+        return False
 
     @pyqtSlot()
     def new_file(self):
@@ -281,6 +285,84 @@ class Editor(QTextEdit):
         self.clear()
         self.current_file = None
         self.update_state()
+
+
+class ImageViewer(QScrollArea):
+
+    def __init__(self, *args):
+        QScrollArea.__init__(self, *args)
+
+        self.scaleFactor = 0.0
+
+        self.imageLabel = QLabel()
+        self.imageLabel.setBackgroundRole(QPalette.Base)
+        self.imageLabel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.imageLabel.setScaledContents(True)
+
+        self.setBackgroundRole(QPalette.Dark)
+        self.setWidget(self.imageLabel)
+
+    def load_image(self, filename):
+        image = QImage(str(filename))
+        if image.isNull():
+            return
+
+        self.imageLabel.setPixmap(QPixmap.fromImage(image))
+        self.scaleFactor = 1.0
+        self.imageLabel.adjustSize()
+
+    def scale_image(self, factor):
+        self.scaleFactor *= factor
+        self.imageLabel.resize(self.scaleFactor * self.imageLabel.pixmap().size())
+
+        self.adjustScrollBar(self.scrollArea.horizontalScrollBar(), factor)
+        self.adjustScrollBar(self.scrollArea.verticalScrollBar(), factor)
+
+        self.zoomInAct.setEnabled(self.scaleFactor < 3.0)
+        self.zoomOutAct.setEnabled(self.scaleFactor > 0.333)
+
+
+class MapView(QTabWidget):
+
+    def __init__(self, mainwin, *args):
+        QTabWidget.__init__(self, *args)
+
+        self.main_window = mainwin
+
+    def create_maps(self, file):
+        self.clear()
+        base = file.parent
+        fig = base.joinpath(file.stem + '_qtifm.fig')
+        status, output = subprocess.getstatusoutput(
+            'ifm -m -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"')
+        if status == 0:
+            png = base.joinpath(file.stem + '_qtifm.png')
+            status, output = subprocess.getstatusoutput(
+                'fig2dev -L png -m 2 -S 4 "' + str(fig) + '" "' + str(png) + '"')
+            if status == 0:
+                viewer = ImageViewer()
+                viewer.load_image(png)
+                self.addTab(viewer, _('Map'))
+            else:
+                self.display_error(_('Running FIG2DEV'),
+                                   _('An error occurred while running FIG2DEV to create the images!'),
+                                   output)
+        else:
+            self.display_error(_('Running IFM'), _('An error occurred while running IFM to create the fig files!'),
+                               output)
+
+    @staticmethod
+    def display_error(title, message, output):
+        sys.stderr.write(output)
+        mb = QMessageBox()
+        mb.setIcon(QMessageBox.Critical)
+        mb.setWindowTitle(title)
+        mb.setText(message)
+        mb.setTextFormat(Qt.PlainText)
+        mb.setInformativeText('<html><code>' + output + '</code></html>')
+        mb.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        mb.setStandardButtons(QMessageBox.Ok)
+        mb.exec()
 
 
 class MainWindow(QMainWindow):
@@ -339,13 +421,14 @@ class MainWindow(QMainWindow):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(5)
         self.editor = Editor(self)
+        self.map_view = MapView(self)
 
         # Connects
         # self.dir_button.clicked.connect(self.select_dir)
         self.new_action.triggered.connect(self.editor.new_file)
         self.open_action.triggered.connect(self.editor.open_file)
-        self.save_action.triggered.connect(self.editor.save_file)
-        self.saveas_action.triggered.connect(self.editor.save_file_as)
+        self.save_action.triggered.connect(self.save_file)
+        self.saveas_action.triggered.connect(self.save_file_as)
         self.about_action.triggered.connect(self.show_about_dialog)
         self.clear_recent_files_action.triggered.connect(self.editor.clear_recent_files)
         self.exit_action.triggered.connect(self.close)
@@ -364,11 +447,25 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.editor.editor_modified_label)
 
         self.splitter.addWidget(self.editor)
+        self.splitter.addWidget(self.map_view)
+
+        if len(self.config.mainwindow_splitter_sizes) > 0:
+            self.splitter.setSizes(self.config.mainwindow_splitter_sizes)
 
     @pyqtSlot()
     def show_about_dialog(self):
         dialog = AboutDialog(self)
         dialog.exec_()
+
+    @pyqtSlot()
+    def save_file(self):
+        if self.editor.save_file():
+            self.map_view.create_maps(self.editor.current_file)
+
+    @pyqtSlot()
+    def save_file_as(self):
+        if self.editor.save_file_as():
+            self.map_view.create_maps(self.editor.current_file)
 
     def closeEvent(self, event):
         if self.editor.abort_if_modified(_('Exit')):
@@ -380,4 +477,9 @@ class MainWindow(QMainWindow):
         self.config.mainwindow_height = self.height()
         self.config.mainwindow_x = self.x()
         self.config.mainwindow_y = self.y()
+
+        self.config.mainwindow_splitter_sizes = []
+        for i in range(0, self.splitter.count()):
+            self.config.mainwindow_splitter_sizes.append(self.splitter.sizes()[i])
+
         self.config.save()

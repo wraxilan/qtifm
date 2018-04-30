@@ -21,6 +21,7 @@ class Config:
         self.mainwindow_height = 600
         self.mainwindow_x = 0
         self.mainwindow_y = 0
+        self.mainwindow_splitter_sizes = []
 
         self.editor_recent_files = []
 
@@ -43,6 +44,7 @@ class Config:
             self.mainwindow_height = mainwin.get('height', self.mainwindow_height)
             self.mainwindow_x = mainwin.get('x', self.mainwindow_x)
             self.mainwindow_y = mainwin.get('y', self.mainwindow_y)
+            self.mainwindow_splitter_sizes = mainwin.get('splitter-sizes', self.mainwindow_splitter_sizes)
 
         editor = data.get('editor', None)
         if editor is not None:
@@ -58,6 +60,7 @@ class Config:
             'height': self.mainwindow_height,
             'x': self.mainwindow_x,
             'y': self.mainwindow_y,
+            'splitter-sizes': self.mainwindow_splitter_sizes,
         }
 
         str_files = []
