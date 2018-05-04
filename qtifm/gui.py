@@ -16,7 +16,7 @@ import traceback
 from pathlib import Path
 from PyQt5.QtGui import (QColor, QIcon, QFont, QPalette, QPixmap, QSyntaxHighlighter, QTextCursor, QTextCharFormat,
                          QTextOption, QImage)
-from PyQt5.QtCore import pyqtSlot, Qt, QFile, QRegExp, QSize, QThread
+from PyQt5.QtCore import pyqtSlot, Qt, QFile, QRegExp, QSize, QThread, pyqtSignal
 from PyQt5.QtWidgets import (QAbstractItemView, QAction, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSplitter, QVBoxLayout, QWidget, QFrame, QDialogButtonBox, QGridLayout, QLineEdit,
@@ -115,6 +115,9 @@ class Highlighter(QSyntaxHighlighter):
 
 class Editor(QTextEdit):
 
+    map_changed_signal = pyqtSignal(Path)
+    map_cleared_signal = pyqtSignal()
+
     def __init__(self, mainwin, *args):
         QTextEdit.__init__(self, *args)
 
@@ -199,6 +202,8 @@ class Editor(QTextEdit):
                     self.setTextCursor(cursor)
                     self.current_file = path
 
+                self.map_changed_signal.emit(self.current_file)  # don't do this within the "with" statement
+
             except OSError:
                 sys.stderr.write('Could not open IFM file: \'' + str(path) + '\'\n')
                 traceback.print_exc(file=sys.stderr)
@@ -249,6 +254,7 @@ class Editor(QTextEdit):
         self.config.editor_recent_files.clear()
         self.update_state()
 
+    @pyqtSlot()
     def save_file(self, update=False):
         if self.current_file is not None:
             try:
@@ -258,23 +264,23 @@ class Editor(QTextEdit):
                     self.text_changed()
                     if update:
                         self.update_state(self.current_file)
-                    return True
+
+                self.map_changed_signal.emit(self.current_file)  # don't do this within the "with" statement
             except OSError:
                 sys.stderr.write('Could not save IFM file: \'' + str(self.current_file) + '\'\n')
                 traceback.print_exc(file=sys.stderr)
                 QMessageBox.critical(self, _('Save'), _(
                     'An error occured while writing the IFM file!\n'
                     'See console output for details.'), QMessageBox.Ok)
-        return False
 
+    @pyqtSlot()
     def save_file_as(self):
         filename, ignore = QFileDialog.getSaveFileName(self.main_window, _('Save as'), '',
                                                        options=QFileDialog.DontUseNativeDialog,
                                                        filter='IFM files (*.ifm);;All files (*)')
         if filename:
             self.current_file = Path(filename)
-            return self.save_file(update=True)
-        return False
+            self.save_file(update=True)
 
     @pyqtSlot()
     def new_file(self):
@@ -285,6 +291,7 @@ class Editor(QTextEdit):
         self.clear()
         self.current_file = None
         self.update_state()
+        self.map_cleared_signal.emit()
 
 
 class ImageViewer(QScrollArea):
@@ -328,41 +335,64 @@ class MapView(QTabWidget):
         QTabWidget.__init__(self, *args)
 
         self.main_window = mainwin
+        self.clear_maps()
 
+    @pyqtSlot()
+    def clear_maps(self):
+        self.clear()
+        self.display_message(self, _('Save the file to create the map images.'))
+
+    @pyqtSlot(Path)
     def create_maps(self, file):
         self.clear()
+
         base = file.parent
         fig = base.joinpath(file.stem + '_qtifm.fig')
+
+        # check syntax
+        status, output = subprocess.getstatusoutput('ifm "' + str(file) + '"')
+        if status != 0:
+            self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
+            return
+
+        # create fig files
         status, output = subprocess.getstatusoutput(
             'ifm -m -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"')
-        if status == 0:
-            png = base.joinpath(file.stem + '_qtifm.png')
-            status, output = subprocess.getstatusoutput(
-                'fig2dev -L png -m 2 -S 4 "' + str(fig) + '" "' + str(png) + '"')
-            if status == 0:
-                viewer = ImageViewer()
-                viewer.load_image(png)
-                self.addTab(viewer, _('Map'))
-            else:
-                self.display_error(_('Running FIG2DEV'),
-                                   _('An error occurred while running FIG2DEV to create the images!'),
-                                   output)
-        else:
-            self.display_error(_('Running IFM'), _('An error occurred while running IFM to create the fig files!'),
-                               output)
+        if status != 0:
+            self.display_message(_('An error occurred while running IFM to create the fig files!'), error=output)
+            return
 
-    @staticmethod
-    def display_error(title, message, output):
-        sys.stderr.write(output)
-        mb = QMessageBox()
-        mb.setIcon(QMessageBox.Critical)
-        mb.setWindowTitle(title)
-        mb.setText(message)
-        mb.setTextFormat(Qt.PlainText)
-        mb.setInformativeText('<html><code>' + output + '</code></html>')
-        mb.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        mb.setStandardButtons(QMessageBox.Ok)
-        mb.exec()
+        # create png files
+        png = base.joinpath(file.stem + '_qtifm.png')
+        status, output = subprocess.getstatusoutput(
+            'fig2dev -L png -m 2 -S 4 "' + str(fig) + '" "' + str(png) + '"')
+        if status != 0:
+            self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
+            return
+
+        # display images
+        viewer = ImageViewer()
+        viewer.load_image(png)
+        self.addTab(viewer, _('Map'))
+
+    def display_message(self, message, error=None):
+
+        if error is not None:
+            sys.stderr.write(error)
+
+        widget = QWidget()
+        layout = QVBoxLayout()
+        widget.setLayout(layout)
+        layout.addStretch(1)
+        label1 = QLabel(message)
+        label1.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label1)
+        if error is not None:
+            label2 = QLabel('<html><code>' + error + '</code></html>')
+            label2.setAlignment(Qt.AlignCenter)
+            layout.addWidget(label2)
+        layout.addStretch(1)
+        self.addTab(widget, _('Map'))
 
 
 class MainWindow(QMainWindow):
@@ -427,13 +457,16 @@ class MainWindow(QMainWindow):
         # self.dir_button.clicked.connect(self.select_dir)
         self.new_action.triggered.connect(self.editor.new_file)
         self.open_action.triggered.connect(self.editor.open_file)
-        self.save_action.triggered.connect(self.save_file)
-        self.saveas_action.triggered.connect(self.save_file_as)
+        self.save_action.triggered.connect(self.editor.save_file)
+        self.saveas_action.triggered.connect(self.editor.save_file_as)
         self.about_action.triggered.connect(self.show_about_dialog)
         self.clear_recent_files_action.triggered.connect(self.editor.clear_recent_files)
         self.exit_action.triggered.connect(self.close)
         # self.show_hidden_check.stateChanged.connect(self.update_dir)
         # self.file_list.itemDoubleClicked.connect(self.show_file)
+
+        self.editor.map_changed_signal.connect(self.map_view.create_maps)
+        self.editor.map_cleared_signal.connect(self.map_view.clear_maps)
 
         # Layout
         central_widget = QWidget()
@@ -452,20 +485,13 @@ class MainWindow(QMainWindow):
         if len(self.config.mainwindow_splitter_sizes) > 0:
             self.splitter.setSizes(self.config.mainwindow_splitter_sizes)
 
+        if self.config.editor_last_file is not None:
+            self.editor.open_path(self.config.editor_last_file, check_modified=False)
+
     @pyqtSlot()
     def show_about_dialog(self):
         dialog = AboutDialog(self)
         dialog.exec_()
-
-    @pyqtSlot()
-    def save_file(self):
-        if self.editor.save_file():
-            self.map_view.create_maps(self.editor.current_file)
-
-    @pyqtSlot()
-    def save_file_as(self):
-        if self.editor.save_file_as():
-            self.map_view.create_maps(self.editor.current_file)
 
     def closeEvent(self, event):
         if self.editor.abort_if_modified(_('Exit')):
@@ -481,5 +507,7 @@ class MainWindow(QMainWindow):
         self.config.mainwindow_splitter_sizes = []
         for i in range(0, self.splitter.count()):
             self.config.mainwindow_splitter_sizes.append(self.splitter.sizes()[i])
+
+        self.config.editor_last_file = self.editor.current_file
 
         self.config.save()

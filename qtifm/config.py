@@ -24,6 +24,7 @@ class Config:
         self.mainwindow_splitter_sizes = []
 
         self.editor_recent_files = []
+        self.editor_last_file = None
 
     def load(self):
         configfile = Path.home().joinpath('.qtifm')
@@ -53,6 +54,12 @@ class Config:
                 path = Path(file)
                 if path.is_file():
                     self.editor_recent_files.append(path)
+            str_file = editor.get('last-file', None)
+
+            if str_file is not None:
+                file = Path(str_file)
+                if file.is_file():
+                    self.editor_last_file = file
 
     def save(self):
         mainwin = {
@@ -66,9 +73,13 @@ class Config:
         str_files = []
         for f in self.editor_recent_files:
             str_files.append(str(f))
+        lastfile = ''
+        if self.editor_last_file is not None:
+            lastfile = str(self.editor_last_file)
 
         editor = {
             'recent-files': str_files,
+            'last-file': lastfile,
         }
 
         data = {
