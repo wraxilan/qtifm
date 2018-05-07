@@ -20,7 +20,7 @@ from PyQt5.QtCore import pyqtSlot, Qt, QFile, QRegExp, QSize, QThread, pyqtSigna
 from PyQt5.QtWidgets import (QAbstractItemView, QAction, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSplitter, QVBoxLayout, QWidget, QFrame, QDialogButtonBox, QGridLayout, QLineEdit,
-                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QListView, QLayout)
+                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QListView, QLayout, QToolBar)
 
 images_path = Path(__file__).parent.joinpath('images')
 resources_path = Path(__file__).parent.joinpath('resources')
@@ -114,7 +114,6 @@ class Highlighter(QSyntaxHighlighter):
 
 
 class Editor(QTextEdit):
-
     map_changed_signal = pyqtSignal(Path)
     map_cleared_signal = pyqtSignal()
 
@@ -299,34 +298,53 @@ class ImageViewer(QScrollArea):
     def __init__(self, *args):
         QScrollArea.__init__(self, *args)
 
-        self.scaleFactor = 0.0
+        self.scale_factor = 0.0
 
-        self.imageLabel = QLabel()
-        self.imageLabel.setBackgroundRole(QPalette.Base)
-        self.imageLabel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.imageLabel.setScaledContents(True)
+        self.image_label = QLabel()
+        self.image_label.setBackgroundRole(QPalette.Base)
+        self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.image_label.setScaledContents(True)
 
         self.setBackgroundRole(QPalette.Dark)
-        self.setWidget(self.imageLabel)
+        self.setWidget(self.image_label)
+
+    def wheelEvent(self, event):
+
+        if event.modifiers() == Qt.ControlModifier:
+            if event.angleDelta().y() > 0:
+                self.scale_image(0.8)
+            else:
+                self.scale_image(1.25)
+        else:
+            QScrollArea.wheelEvent(self, event)
 
     def load_image(self, filename):
         image = QImage(str(filename))
         if image.isNull():
             return
 
-        self.imageLabel.setPixmap(QPixmap.fromImage(image))
-        self.scaleFactor = 1.0
-        self.imageLabel.adjustSize()
+        self.image_label.setPixmap(QPixmap.fromImage(image))
+        self.scale_factor = 1.0
+        self.image_label.adjustSize()
+
+    def normal_size(self):
+        self.image_label.adjustSize()
+        self.scale_factor = 1.0
 
     def scale_image(self, factor):
-        self.scaleFactor *= factor
-        self.imageLabel.resize(self.scaleFactor * self.imageLabel.pixmap().size())
+        test_factor = self.scale_factor * factor
+        if test_factor >= 3.0 or test_factor <= 0.333:
+            return
 
-        self.adjustScrollBar(self.scrollArea.horizontalScrollBar(), factor)
-        self.adjustScrollBar(self.scrollArea.verticalScrollBar(), factor)
+        self.scale_factor *= factor
+        self.image_label.resize(self.scale_factor * self.image_label.pixmap().size())
 
-        self.zoomInAct.setEnabled(self.scaleFactor < 3.0)
-        self.zoomOutAct.setEnabled(self.scaleFactor > 0.333)
+        self.adjust_scroll_bar(self.horizontalScrollBar(), factor)
+        self.adjust_scroll_bar(self.verticalScrollBar(), factor)
+
+    @staticmethod
+    def adjust_scroll_bar(scroll_bar, factor):
+        scroll_bar.setValue(int(factor * scroll_bar.value() + ((factor - 1) * scroll_bar.pageStep() / 2)))
 
 
 class MapView(QTabWidget):
@@ -334,6 +352,7 @@ class MapView(QTabWidget):
     def __init__(self, mainwin, *args):
         QTabWidget.__init__(self, *args)
 
+        self.setStyleSheet("QTabWidget::pane { margin: 0; }")
         self.main_window = mainwin
         self.clear_maps()
 
@@ -374,6 +393,24 @@ class MapView(QTabWidget):
         viewer = ImageViewer()
         viewer.load_image(png)
         self.addTab(viewer, _('Map'))
+
+    @pyqtSlot()
+    def normal_size(self):
+        viewer = self.currentWidget()
+        if viewer is not None:
+            viewer.normal_size()
+
+    @pyqtSlot()
+    def zoom_in(self):
+        viewer = self.currentWidget()
+        if viewer is not None:
+            viewer.scale_image(1.25)
+
+    @pyqtSlot()
+    def zoom_out(self):
+        viewer = self.currentWidget()
+        if viewer is not None:
+            viewer.scale_image(0.8)
 
     def display_message(self, message, error=None):
 
@@ -425,6 +462,13 @@ class MainWindow(QMainWindow):
         self.saveas_action.setShortcut('Shift+Ctrl+S')
         self.clear_recent_files_action = QAction(_('Clear Items'))
 
+        self.normal_size_action = QAction(QIcon.fromTheme('zoom-original'), _('Normal Size'))
+        self.normal_size_action.setShortcut('Ctrl+0')
+        self.zoom_in_action = QAction(QIcon.fromTheme('zoom-in'), _('Zoom In'))
+        self.zoom_in_action.setShortcut('Ctrl++')
+        self.zoom_out_action = QAction(QIcon.fromTheme('zoom-out'), _('Zoom Out'))
+        self.zoom_out_action.setShortcut('Ctrl+-')
+
         # Menu Bar
         file_menu = self.menuBar().addMenu(_('File'))
         file_menu.addAction(self.new_action)
@@ -446,6 +490,10 @@ class MainWindow(QMainWindow):
         tool_bar.addAction(self.open_action)
         tool_bar.addAction(self.save_action)
         tool_bar.addAction(self.saveas_action)
+        tool_bar.addSeparator()
+        tool_bar.addAction(self.normal_size_action)
+        tool_bar.addAction(self.zoom_in_action)
+        tool_bar.addAction(self.zoom_out_action)
 
         # Widgets
         self.splitter = QSplitter(Qt.Horizontal)
@@ -462,6 +510,9 @@ class MainWindow(QMainWindow):
         self.about_action.triggered.connect(self.show_about_dialog)
         self.clear_recent_files_action.triggered.connect(self.editor.clear_recent_files)
         self.exit_action.triggered.connect(self.close)
+        self.normal_size_action.triggered.connect(self.map_view.normal_size)
+        self.zoom_in_action.triggered.connect(self.map_view.zoom_in)
+        self.zoom_out_action.triggered.connect(self.map_view.zoom_out)
         # self.show_hidden_check.stateChanged.connect(self.update_dir)
         # self.file_list.itemDoubleClicked.connect(self.show_file)
 
