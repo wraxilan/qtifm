@@ -295,10 +295,11 @@ class Editor(QTextEdit):
 
 class ImageViewer(QScrollArea):
 
-    def __init__(self, *args):
+    def __init__(self, changed_signal, *args):
         QScrollArea.__init__(self, *args)
 
-        self.scale_factor = 0.0
+        self.changed_signal = changed_signal
+        self.scale_factor = 1.0
 
         self.image_label = QLabel()
         self.image_label.setBackgroundRole(QPalette.Base)
@@ -311,10 +312,11 @@ class ImageViewer(QScrollArea):
     def wheelEvent(self, event):
 
         if event.modifiers() == Qt.ControlModifier:
-            if event.angleDelta().y() > 0:
+            if event.angleDelta().y() < 0:
                 self.scale_image(0.8)
             else:
                 self.scale_image(1.25)
+            self.changed_signal.emit()
         else:
             QScrollArea.wheelEvent(self, event)
 
@@ -342,12 +344,19 @@ class ImageViewer(QScrollArea):
         self.adjust_scroll_bar(self.horizontalScrollBar(), factor)
         self.adjust_scroll_bar(self.verticalScrollBar(), factor)
 
+    def scale_image_allowed(self, factor):
+        test_factor = self.scale_factor * factor
+        if test_factor >= 3.0 or test_factor <= 0.333:
+            return False
+        return True
+
     @staticmethod
     def adjust_scroll_bar(scroll_bar, factor):
         scroll_bar.setValue(int(factor * scroll_bar.value() + ((factor - 1) * scroll_bar.pageStep() / 2)))
 
 
 class MapView(QTabWidget):
+    map_view_changed_signal = pyqtSignal()
 
     def __init__(self, mainwin, *args):
         QTabWidget.__init__(self, *args)
@@ -355,15 +364,27 @@ class MapView(QTabWidget):
         self.setStyleSheet("QTabWidget::pane { margin: 0; }")
         self.main_window = mainwin
         self.clear_maps()
+        self.valid = False
 
     @pyqtSlot()
     def clear_maps(self):
         self.clear()
+        self.valid = False
         self.display_message(self, _('Save the file to create the map images.'))
+        self.map_view_changed_signal.emit()
 
     @pyqtSlot(Path)
     def create_maps(self, file):
+
+        selected_index = -1
+        old_viewers = []
+        if self.valid:
+            selected_index = self.currentIndex()
+            for i in range(0, self.count()):
+                old_viewers.append(self.widget(i))
+
         self.clear()
+        self.valid = False
 
         base = file.parent
         fig = base.joinpath(file.stem + '_qtifm.fig')
@@ -374,11 +395,48 @@ class MapView(QTabWidget):
             self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
             return
 
+        # check maps
+        status, output = subprocess.getstatusoutput('ifm --show=maps "' + str(file) + '"')
+        if status != 0:
+            self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
+            return
+
+        self.valid = True
+        sections = []
+        if output is not None and len(output) > 0:
+            lines = output.split('\n')
+            length = len(lines)
+            if length > 1:
+                for i in range(1, length):
+                    line = lines[i].split('\t')
+                    if len(line) == 5:
+                        sections.append([line[0], line[4]])
+
+        if len(sections) > 0:
+            for i in range(0, len(sections)):
+                scale_factor = None
+                if i < len(old_viewers):
+                    scale_factor = old_viewers[i].scale_factor
+                section = sections[i]
+                self.create_map_section(file, base, fig, section[0], section[1], scale_factor)
+        else:
+            self.create_map_section(file, base, fig, None, _('Map'), None)
+
+        if 0 <= selected_index < self.count():
+            self.setCurrentIndex(selected_index)
+
+        self.map_view_changed_signal.emit()
+
+    def create_map_section(self, file, base, fig, section, name, scale_factor):
         # create fig files
-        status, output = subprocess.getstatusoutput(
-            'ifm -m -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"')
+        if section is not None:
+            cmd = 'ifm -m=' + section + ' -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+        else:
+            cmd = 'ifm -m -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+        status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
             self.display_message(_('An error occurred while running IFM to create the fig files!'), error=output)
+            self.valid = False
             return
 
         # create png files
@@ -387,30 +445,54 @@ class MapView(QTabWidget):
             'fig2dev -L png -m 2 -S 4 "' + str(fig) + '" "' + str(png) + '"')
         if status != 0:
             self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
+            self.valid = False
             return
 
         # display images
-        viewer = ImageViewer()
+        viewer = ImageViewer(self.map_view_changed_signal)
         viewer.load_image(png)
-        self.addTab(viewer, _('Map'))
+        self.addTab(viewer, name)
+
+        if scale_factor is not None:
+            viewer.scale_image(scale_factor)
 
     @pyqtSlot()
     def normal_size(self):
-        viewer = self.currentWidget()
-        if viewer is not None:
-            viewer.normal_size()
+        if self.valid:
+            viewer = self.currentWidget()
+            if viewer is not None:
+                viewer.normal_size()
+                self.map_view_changed_signal.emit()
 
     @pyqtSlot()
     def zoom_in(self):
-        viewer = self.currentWidget()
-        if viewer is not None:
-            viewer.scale_image(1.25)
+        if self.valid:
+            viewer = self.currentWidget()
+            if viewer is not None:
+                viewer.scale_image(1.25)
+                self.map_view_changed_signal.emit()
 
     @pyqtSlot()
     def zoom_out(self):
-        viewer = self.currentWidget()
-        if viewer is not None:
-            viewer.scale_image(0.8)
+        if self.valid:
+            viewer = self.currentWidget()
+            if viewer is not None:
+                viewer.scale_image(0.8)
+                self.map_view_changed_signal.emit()
+
+    def zoom_in_allowed(self):
+        if self.valid:
+            viewer = self.currentWidget()
+            if viewer is not None:
+                return viewer.scale_image_allowed(1.25)
+        return False
+
+    def zoom_out_allowed(self):
+        if self.valid:
+            viewer = self.currentWidget()
+            if viewer is not None:
+                return viewer.scale_image_allowed(0.8)
+        return False
 
     def display_message(self, message, error=None):
 
@@ -502,7 +584,6 @@ class MainWindow(QMainWindow):
         self.map_view = MapView(self)
 
         # Connects
-        # self.dir_button.clicked.connect(self.select_dir)
         self.new_action.triggered.connect(self.editor.new_file)
         self.open_action.triggered.connect(self.editor.open_file)
         self.save_action.triggered.connect(self.editor.save_file)
@@ -513,11 +594,11 @@ class MainWindow(QMainWindow):
         self.normal_size_action.triggered.connect(self.map_view.normal_size)
         self.zoom_in_action.triggered.connect(self.map_view.zoom_in)
         self.zoom_out_action.triggered.connect(self.map_view.zoom_out)
-        # self.show_hidden_check.stateChanged.connect(self.update_dir)
-        # self.file_list.itemDoubleClicked.connect(self.show_file)
 
         self.editor.map_changed_signal.connect(self.map_view.create_maps)
         self.editor.map_cleared_signal.connect(self.map_view.clear_maps)
+
+        self.map_view.map_view_changed_signal.connect(self.enable_map_actions)
 
         # Layout
         central_widget = QWidget()
@@ -538,6 +619,12 @@ class MainWindow(QMainWindow):
 
         if self.config.editor_last_file is not None:
             self.editor.open_path(self.config.editor_last_file, check_modified=False)
+
+    @pyqtSlot()
+    def enable_map_actions(self):
+        self.zoom_in_action.setEnabled(self.map_view.zoom_in_allowed())
+        self.zoom_out_action.setEnabled(self.map_view.zoom_out_allowed())
+        self.normal_size_action.setEnabled(self.map_view.valid)
 
     @pyqtSlot()
     def show_about_dialog(self):
