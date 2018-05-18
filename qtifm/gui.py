@@ -160,7 +160,7 @@ class Editor(QTextEdit):
             self.editor_modified_label.setText('')
         elif not self.editor_modified:
             self.editor_modified = True
-            self.editor_modified_label.setText(_('Modified'))
+            self.editor_modified_label.setText(_('Modified  /'))
 
     def abort_if_modified(self, title):
         if self.editor_modified:
@@ -313,9 +313,9 @@ class ImageViewer(QScrollArea):
 
         if event.modifiers() == Qt.ControlModifier:
             if event.angleDelta().y() < 0:
-                self.scale_image(0.8)
+                self.scale_image(-0.1)
             else:
-                self.scale_image(1.25)
+                self.scale_image(+0.1)
             self.changed_signal.emit()
         else:
             QScrollArea.wheelEvent(self, event)
@@ -333,20 +333,25 @@ class ImageViewer(QScrollArea):
         self.image_label.adjustSize()
         self.scale_factor = 1.0
 
-    def scale_image(self, factor):
-        test_factor = self.scale_factor * factor
-        if test_factor >= 3.0 or test_factor <= 0.333:
+    def scale_image(self, factor, absolute=False):
+        test_factor = self.scale_factor + factor
+        if absolute:
+            test_factor = factor
+        if test_factor > 3.0 or test_factor < 0.2:
             return
 
-        self.scale_factor *= factor
+        self.scale_factor += factor
+        if absolute:
+            self.scale_factor = factor
+
         self.image_label.resize(self.scale_factor * self.image_label.pixmap().size())
 
         self.adjust_scroll_bar(self.horizontalScrollBar(), factor)
         self.adjust_scroll_bar(self.verticalScrollBar(), factor)
 
     def scale_image_allowed(self, factor):
-        test_factor = self.scale_factor * factor
-        if test_factor >= 3.0 or test_factor <= 0.333:
+        test_factor = self.scale_factor + factor
+        if test_factor > 3.0 or test_factor < 0.2:
             return False
         return True
 
@@ -363,8 +368,18 @@ class MapView(QTabWidget):
 
         self.setStyleSheet("QTabWidget::pane { margin: 0; }")
         self.main_window = mainwin
-        self.clear_maps()
         self.valid = False
+        self.last_file = None
+
+        self.zoom_factor_label = QLabel()
+        self.zoom_factor_label.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
+
+        self.clear_maps()
+        self.currentChanged.connect(self.tab_changed)
+
+    @pyqtSlot()
+    def tab_changed(self):
+        self.map_view_changed_signal.emit()
 
     @pyqtSlot()
     def clear_maps(self):
@@ -378,7 +393,7 @@ class MapView(QTabWidget):
 
         selected_index = -1
         old_viewers = []
-        if self.valid:
+        if self.valid and self.last_file == file:
             selected_index = self.currentIndex()
             for i in range(0, self.count()):
                 old_viewers.append(self.widget(i))
@@ -425,14 +440,15 @@ class MapView(QTabWidget):
         if 0 <= selected_index < self.count():
             self.setCurrentIndex(selected_index)
 
+        self.last_file = file
         self.map_view_changed_signal.emit()
 
     def create_map_section(self, file, base, fig, section, name, scale_factor):
         # create fig files
         if section is not None:
-            cmd = 'ifm -m=' + section + ' -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = 'ifm -m=' + section + ' -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         else:
-            cmd = 'ifm -m -S helvetica -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = 'ifm -m -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
             self.display_message(_('An error occurred while running IFM to create the fig files!'), error=output)
@@ -442,7 +458,7 @@ class MapView(QTabWidget):
         # create png files
         png = base.joinpath(file.stem + '_qtifm.png')
         status, output = subprocess.getstatusoutput(
-            'fig2dev -L png -m 2 -S 4 "' + str(fig) + '" "' + str(png) + '"')
+            'fig2dev -L png -m 2 -S 4 -b 5 "' + str(fig) + '" "' + str(png) + '"')
         if status != 0:
             self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
             self.valid = False
@@ -454,7 +470,15 @@ class MapView(QTabWidget):
         self.addTab(viewer, name)
 
         if scale_factor is not None:
-            viewer.scale_image(scale_factor)
+            viewer.scale_image(scale_factor, absolute=True)
+
+    def update_zoom_factor_status(self):
+        if self.valid:
+            viewer = self.currentWidget()
+            if viewer is not None:
+                self.zoom_factor_label.setText(_('Zoom: ') + '{:.0%}'.format(viewer.scale_factor))
+                return
+        self.zoom_factor_label.setText(_('Zoom: -'))
 
     @pyqtSlot()
     def normal_size(self):
@@ -462,6 +486,7 @@ class MapView(QTabWidget):
             viewer = self.currentWidget()
             if viewer is not None:
                 viewer.normal_size()
+                self.update_zoom_factor_status()
                 self.map_view_changed_signal.emit()
 
     @pyqtSlot()
@@ -469,7 +494,7 @@ class MapView(QTabWidget):
         if self.valid:
             viewer = self.currentWidget()
             if viewer is not None:
-                viewer.scale_image(1.25)
+                viewer.scale_image(+0.1)
                 self.map_view_changed_signal.emit()
 
     @pyqtSlot()
@@ -477,21 +502,21 @@ class MapView(QTabWidget):
         if self.valid:
             viewer = self.currentWidget()
             if viewer is not None:
-                viewer.scale_image(0.8)
+                viewer.scale_image(-0.1)
                 self.map_view_changed_signal.emit()
 
     def zoom_in_allowed(self):
         if self.valid:
             viewer = self.currentWidget()
             if viewer is not None:
-                return viewer.scale_image_allowed(1.25)
+                return viewer.scale_image_allowed(+0.1)
         return False
 
     def zoom_out_allowed(self):
         if self.valid:
             viewer = self.currentWidget()
             if viewer is not None:
-                return viewer.scale_image_allowed(0.8)
+                return viewer.scale_image_allowed(-0.1)
         return False
 
     def display_message(self, message, error=None):
@@ -610,6 +635,7 @@ class MainWindow(QMainWindow):
         self.statusBar().setSizeGripEnabled(False)
         self.statusBar().addWidget(self.editor.cursor_position_label, 1)
         self.statusBar().addWidget(self.editor.editor_modified_label)
+        self.statusBar().addWidget(self.map_view.zoom_factor_label)
 
         self.splitter.addWidget(self.editor)
         self.splitter.addWidget(self.map_view)
@@ -625,6 +651,7 @@ class MainWindow(QMainWindow):
         self.zoom_in_action.setEnabled(self.map_view.zoom_in_allowed())
         self.zoom_out_action.setEnabled(self.map_view.zoom_out_allowed())
         self.normal_size_action.setEnabled(self.map_view.valid)
+        self.map_view.update_zoom_factor_status()
 
     @pyqtSlot()
     def show_about_dialog(self):
