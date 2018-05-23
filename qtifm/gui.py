@@ -83,17 +83,24 @@ class AboutDialog(QDialog):
 
 
 class Highlighter(QSyntaxHighlighter):
-    def __init__(self, parent=None):
+
+    def __init__(self, dark_theme, parent=None):
         super(Highlighter, self).__init__(parent)
 
         keyword_format = QTextCharFormat()
-        keyword_format.setForeground(Qt.yellow)
+        if dark_theme:
+            keyword_format.setForeground(Qt.green)
+        else:
+            keyword_format.setForeground(Qt.darkGreen)
         keyword_patterns = ["\\btitle\\b", "\\bmap\\b", "\\brequire\\b"]
         self.highlightingRules = [(QRegExp(pattern), keyword_format)
                                   for pattern in keyword_patterns]
 
         quotation_format = QTextCharFormat()
-        quotation_format.setForeground(QColor(180, 200, 255))
+        if dark_theme:
+            quotation_format.setForeground(QColor(180, 200, 255))
+        else:
+            quotation_format.setForeground(QColor(Qt.darkBlue))
         self.highlightingRules.append((QRegExp("\".*\""), quotation_format))
 
         single_line_comment_format = QTextCharFormat()
@@ -117,13 +124,13 @@ class Editor(QTextEdit):
     map_changed_signal = pyqtSignal(Path)
     map_cleared_signal = pyqtSignal()
 
-    def __init__(self, mainwin, *args):
+    def __init__(self, mainwin, dark_theme, *args):
         QTextEdit.__init__(self, *args)
 
         self.main_window = mainwin
         self.config = mainwin.config
         self.setStyleSheet('font-family: "Monospace";')
-        self.highlighter = Highlighter(self.document())
+        self.highlighter = Highlighter(dark_theme, self.document())
         self.setWordWrapMode(QTextOption.NoWrap)
 
         self.current_file = None
@@ -144,6 +151,9 @@ class Editor(QTextEdit):
         self.textChanged.connect(self.text_changed)
 
         self.update_state()
+
+    def reset_highlighter(self, dark_theme):
+        self.highlighter = Highlighter(dark_theme, self.document())
 
     @pyqtSlot()
     def cursor_position_changed(self):
@@ -363,11 +373,12 @@ class ImageViewer(QScrollArea):
 class MapView(QTabWidget):
     map_view_changed_signal = pyqtSignal()
 
-    def __init__(self, mainwin, *args):
+    def __init__(self, mainwin, config, *args):
         QTabWidget.__init__(self, *args)
 
         self.setStyleSheet("QTabWidget::pane { margin: 0; }")
         self.main_window = mainwin
+        self.config = config
         self.valid = False
         self.last_file = None
 
@@ -405,13 +416,13 @@ class MapView(QTabWidget):
         fig = base.joinpath(file.stem + '_qtifm.fig')
 
         # check syntax
-        status, output = subprocess.getstatusoutput('ifm "' + str(file) + '"')
+        status, output = subprocess.getstatusoutput(self.config.map_ifm_command + ' "' + str(file) + '"')
         if status != 0:
             self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
             return
 
         # check maps
-        status, output = subprocess.getstatusoutput('ifm --show=maps "' + str(file) + '"')
+        status, output = subprocess.getstatusoutput(self.config.map_ifm_command + ' --show=maps "' + str(file) + '"')
         if status != 0:
             self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
             return
@@ -446,9 +457,9 @@ class MapView(QTabWidget):
     def create_map_section(self, file, base, fig, section, name, scale_factor):
         # create fig files
         if section is not None:
-            cmd = 'ifm -m=' + section + ' -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = self.config.map_ifm_command + ' -m=' + section + ' -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         else:
-            cmd = 'ifm -m -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = self.config.map_ifm_command + ' -m -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
             self.display_message(_('An error occurred while running IFM to create the fig files!'), error=output)
@@ -458,7 +469,7 @@ class MapView(QTabWidget):
         # create png files
         png = base.joinpath(file.stem + '_qtifm.png')
         status, output = subprocess.getstatusoutput(
-            'fig2dev -L png -m 2 -S 4 -b 5 "' + str(fig) + '" "' + str(png) + '"')
+            self.config.map_fig2dev_command + ' -L png -m 2 -S 4 -b 5 "' + str(fig) + '" "' + str(png) + '"')
         if status != 0:
             self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
             self.valid = False
@@ -539,6 +550,87 @@ class MapView(QTabWidget):
         self.addTab(widget, _('Map'))
 
 
+class DirectoryFieldButton(QPushButton):
+
+    def __init__(self, icon, parent, ledit, dirsonly):
+        QPushButton.__init__(self, icon, '', parent)
+        self.line_edit = ledit
+        self.directories_only = dirsonly
+        self.clicked.connect(self.select_dir)
+
+    @pyqtSlot()
+    def select_dir(self):
+
+        if self.directories_only:
+            filename = QFileDialog.getExistingDirectory(self, 'Choose directory', self.line_edit.text(),
+                                                        QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
+        else:
+            filename, _ = QFileDialog.getOpenFileName(self, 'Choose file', self.line_edit.text(),
+                                                      options=QFileDialog.DontUseNativeDialog)
+        if filename:
+            file = Path(filename)
+            if self.directories_only:
+                if file.is_dir():
+                    self.line_edit.setText(filename)
+                    self.line_edit.setFocus()
+            else:
+                if file.is_file():
+                    self.line_edit.setText(filename)
+                    self.line_edit.setFocus()
+
+
+class SettingsDialog(QDialog):
+
+    def __init__(self, *args):
+        QDialog.__init__(self, *args)
+        self.setWindowTitle(_('Settings'))
+
+        self.ifm_command_edit = self.__lineedit()
+        self.fig2dev_command_edit = self.__lineedit()
+
+        self.dark_theme_check = QCheckBox(_('Syntax highlighting for dark theme'))
+
+        dlglyt = QVBoxLayout()
+        dlglyt.setSizeConstraint(QLayout.SetFixedSize)
+        self.setLayout(dlglyt)
+
+        grid = QGridLayout()
+        dlglyt.addLayout(grid)
+        grid.setSpacing(10)
+
+        grid.addWidget(self.__label(_('ifm command:')), 0, 0)
+        grid.addWidget(self.ifm_command_edit, 0, 1)
+        grid.addWidget(self.__dirbutton(self.ifm_command_edit, False), 0, 2)
+
+        grid.addWidget(self.__label(_('fig2dev command:')), 1, 0)
+        grid.addWidget(self.fig2dev_command_edit, 1, 1)
+        grid.addWidget(self.__dirbutton(self.fig2dev_command_edit, False), 1, 2)
+
+        grid.addWidget(self.dark_theme_check, 2, 1, 1, 2)
+
+        dlglyt.addSpacing(10)
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        dlglyt.addWidget(button_box)
+
+    @staticmethod
+    def __label(name):
+        label = QLabel(name)
+        label.setAlignment(Qt.AlignRight)
+        return label
+
+    @staticmethod
+    def __lineedit():
+        edit = QLineEdit()
+        edit.setFixedWidth(400)
+        return edit
+
+    def __dirbutton(self, ledit, dirsonly):
+        button = DirectoryFieldButton(QIcon.fromTheme('folder-open'), self, ledit, dirsonly)
+        return button
+
+
 class MainWindow(QMainWindow):
 
     def __init__(self, *args):
@@ -568,6 +660,7 @@ class MainWindow(QMainWindow):
         self.saveas_action = QAction(QIcon.fromTheme('document-save-as'), _('Save As...'))
         self.saveas_action.setShortcut('Shift+Ctrl+S')
         self.clear_recent_files_action = QAction(_('Clear Items'))
+        self.settings_action = QAction(_('Settings'))
 
         self.normal_size_action = QAction(QIcon.fromTheme('zoom-original'), _('Normal Size'))
         self.normal_size_action.setShortcut('Ctrl+0')
@@ -583,6 +676,8 @@ class MainWindow(QMainWindow):
         self.recent_files_menu = file_menu.addMenu(_('Open recent'))
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.saveas_action)
+        file_menu.addSeparator()
+        file_menu.addAction(self.settings_action)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
@@ -605,8 +700,8 @@ class MainWindow(QMainWindow):
         # Widgets
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(5)
-        self.editor = Editor(self)
-        self.map_view = MapView(self)
+        self.editor = Editor(self, self.config.editor_dark_theme)
+        self.map_view = MapView(self, self.config)
 
         # Connects
         self.new_action.triggered.connect(self.editor.new_file)
@@ -615,6 +710,7 @@ class MainWindow(QMainWindow):
         self.saveas_action.triggered.connect(self.editor.save_file_as)
         self.about_action.triggered.connect(self.show_about_dialog)
         self.clear_recent_files_action.triggered.connect(self.editor.clear_recent_files)
+        self.settings_action.triggered.connect(self.show_settings)
         self.exit_action.triggered.connect(self.close)
         self.normal_size_action.triggered.connect(self.map_view.normal_size)
         self.zoom_in_action.triggered.connect(self.map_view.zoom_in)
@@ -657,6 +753,23 @@ class MainWindow(QMainWindow):
     def show_about_dialog(self):
         dialog = AboutDialog(self)
         dialog.exec_()
+
+    @pyqtSlot()
+    def show_settings(self):
+        dialog = SettingsDialog(self)
+        dialog.ifm_command_edit.setText(self.config.map_ifm_command)
+        dialog.fig2dev_command_edit.setText(self.config.map_fig2dev_command)
+        dialog.dark_theme_check.setChecked(self.config.editor_dark_theme)
+        dark_theme = self.config.editor_dark_theme
+
+        result = dialog.exec_()
+        if result == QDialog.Accepted:
+            self.config.map_ifm_command = dialog.ifm_command_edit.text().strip()
+            self.config.map_fig2dev_command = dialog.fig2dev_command_edit.text().strip()
+            self.config.editor_dark_theme = dialog.dark_theme_check.isChecked()
+
+            if self.config.editor_dark_theme != dark_theme:
+                self.editor.reset_highlighter(self.config.editor_dark_theme)
 
     def closeEvent(self, event):
         if self.editor.abort_if_modified(_('Exit')):

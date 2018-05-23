@@ -25,6 +25,10 @@ class Config:
 
         self.editor_recent_files = []
         self.editor_last_file = None
+        self.editor_dark_theme = False
+
+        self.map_ifm_command = 'ifm'
+        self.map_fig2dev_command = 'fig2dev'
 
     def load(self):
         configfile = Path.home().joinpath('.qtifm')
@@ -61,6 +65,13 @@ class Config:
                 if file.is_file():
                     self.editor_last_file = file
 
+            self.editor_dark_theme = editor.get('dark-theme', self.editor_dark_theme)
+
+        map_prop = data.get('map', None)
+        if map_prop is not None:
+            self.map_ifm_command = map_prop.get('ifm-command', self.map_ifm_command)
+            self.map_fig2dev_command = map_prop.get('fig2dev-command', self.map_fig2dev_command)
+
     def save(self):
         mainwin = {
             'witdh': self.mainwindow_witdh,
@@ -80,11 +91,18 @@ class Config:
         editor = {
             'recent-files': str_files,
             'last-file': lastfile,
+            'dark-theme': self.editor_dark_theme
+        }
+
+        map_prop = {
+            'ifm-command': self.map_ifm_command,
+            'fig2dev-command': self.map_fig2dev_command,
         }
 
         data = {
             'mainwindow': mainwin,
             'editor': editor,
+            'map': map_prop,
         }
 
         configfile = Path.home().joinpath('.qtifm')
