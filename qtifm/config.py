@@ -28,6 +28,7 @@ class Config:
         self.editor_dark_theme = False
 
         self.map_ifm_command = 'ifm'
+        self.map_ifm_helvetica_as_default = False
         self.map_fig2dev_command = 'fig2dev'
 
     def load(self):
@@ -70,6 +71,7 @@ class Config:
         map_prop = data.get('map', None)
         if map_prop is not None:
             self.map_ifm_command = map_prop.get('ifm-command', self.map_ifm_command)
+            self.map_ifm_helvetica_as_default = map_prop.get('ifm-helvetica-as-default', self.map_ifm_helvetica_as_default)
             self.map_fig2dev_command = map_prop.get('fig2dev-command', self.map_fig2dev_command)
 
     def save(self):
@@ -96,6 +98,7 @@ class Config:
 
         map_prop = {
             'ifm-command': self.map_ifm_command,
+            'ifm-helvetica-as-default': self.map_ifm_helvetica_as_default,
             'fig2dev-command': self.map_fig2dev_command,
         }
 

@@ -433,10 +433,14 @@ class MapView(QTabWidget):
             lines = output.split('\n')
             length = len(lines)
             if length > 1:
-                for i in range(1, length):
-                    line = lines[i].split('\t')
-                    if len(line) == 5:
-                        sections.append([line[0], line[4]])
+                header = False
+                for i in range(0, length):
+                    if header:
+                        line = lines[i].split('\t')
+                        if len(line) == 5:
+                            sections.append([line[0], line[4]])
+                    else:
+                        header = lines[i].startswith('No.')
 
         if len(sections) > 0:
             for i in range(0, len(sections)):
@@ -456,23 +460,26 @@ class MapView(QTabWidget):
 
     def create_map_section(self, file, base, fig, section, name, scale_factor):
         # create fig files
+        style = ''
+        if self.config.map_ifm_helvetica_as_default:
+            style = ' -S helvetica'
         if section is not None:
-            cmd = self.config.map_ifm_command + ' -m=' + section + ' -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = self.config.map_ifm_command + style + ' -m=' + section + ' -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         else:
-            cmd = self.config.map_ifm_command + ' -m -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = self.config.map_ifm_command + style + ' -m -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         status, output = subprocess.getstatusoutput(cmd)
         if status != 0:
-            self.display_message(_('An error occurred while running IFM to create the fig files!'), error=output)
             self.valid = False
+            self.display_message(_('An error occurred while running IFM to create the fig files!'), error=output)
             return
 
         # create png files
         png = base.joinpath(file.stem + '_qtifm.png')
         status, output = subprocess.getstatusoutput(
-            self.config.map_fig2dev_command + ' -L png -m 2 -S 4 -b 5 "' + str(fig) + '" "' + str(png) + '"')
+            self.config.map_fig2dev_command + ' -L png -m 2.0 -S 4 -b 5 "' + str(fig) + '" "' + str(png) + '"')
         if status != 0:
-            self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
             self.valid = False
+            self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
             return
 
         # display images
@@ -588,7 +595,8 @@ class SettingsDialog(QDialog):
         self.ifm_command_edit = self.__lineedit()
         self.fig2dev_command_edit = self.__lineedit()
 
-        self.dark_theme_check = QCheckBox(_('Syntax highlighting for dark theme'))
+        self.dark_theme_check = QCheckBox(_('Syntax highlighting for dark themes'))
+        self.helvetica_check = QCheckBox(_('Use Helvetica as default font'))
 
         dlglyt = QVBoxLayout()
         dlglyt.setSizeConstraint(QLayout.SetFixedSize)
@@ -606,7 +614,8 @@ class SettingsDialog(QDialog):
         grid.addWidget(self.fig2dev_command_edit, 1, 1)
         grid.addWidget(self.__dirbutton(self.fig2dev_command_edit, False), 1, 2)
 
-        grid.addWidget(self.dark_theme_check, 2, 1, 1, 2)
+        grid.addWidget(self.helvetica_check, 2, 1, 1, 2)
+        grid.addWidget(self.dark_theme_check, 3, 1, 1, 2)
 
         dlglyt.addSpacing(10)
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -760,13 +769,17 @@ class MainWindow(QMainWindow):
         dialog.ifm_command_edit.setText(self.config.map_ifm_command)
         dialog.fig2dev_command_edit.setText(self.config.map_fig2dev_command)
         dialog.dark_theme_check.setChecked(self.config.editor_dark_theme)
+        dialog.helvetica_check.setChecked(self.config.map_ifm_helvetica_as_default)
+
         dark_theme = self.config.editor_dark_theme
+        helveticy = self.config.map_ifm_helvetica_as_default
 
         result = dialog.exec_()
         if result == QDialog.Accepted:
             self.config.map_ifm_command = dialog.ifm_command_edit.text().strip()
             self.config.map_fig2dev_command = dialog.fig2dev_command_edit.text().strip()
             self.config.editor_dark_theme = dialog.dark_theme_check.isChecked()
+            self.config.map_ifm_helvetica_as_default = dialog.helvetica_check.isChecked()
 
             if self.config.editor_dark_theme != dark_theme:
                 self.editor.reset_highlighter(self.config.editor_dark_theme)
