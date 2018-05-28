@@ -28,8 +28,10 @@ class Config:
         self.editor_dark_theme = False
 
         self.map_ifm_command = 'ifm'
+        self.map_ifm_create_image_per_map = True
         self.map_ifm_helvetica_as_default = False
         self.map_fig2dev_command = 'fig2dev'
+        self.map_fig2dev_magnification_factor = 3
 
     def load(self):
         configfile = Path.home().joinpath('.qtifm')
@@ -71,8 +73,14 @@ class Config:
         map_prop = data.get('map', None)
         if map_prop is not None:
             self.map_ifm_command = map_prop.get('ifm-command', self.map_ifm_command)
-            self.map_ifm_helvetica_as_default = map_prop.get('ifm-helvetica-as-default', self.map_ifm_helvetica_as_default)
+            self.map_ifm_create_image_per_map = map_prop.get('ifm-create-image-per-map',
+                                                             self.map_ifm_create_image_per_map)
+            self.map_ifm_helvetica_as_default = map_prop.get('ifm-helvetica-as-default',
+                                                             self.map_ifm_helvetica_as_default)
             self.map_fig2dev_command = map_prop.get('fig2dev-command', self.map_fig2dev_command)
+            self.map_fig2dev_magnification_factor = map_prop.get('fig2dev-magnification-factor',
+                                                                 self.map_fig2dev_magnification_factor)
+
 
     def save(self):
         mainwin = {
@@ -98,8 +106,10 @@ class Config:
 
         map_prop = {
             'ifm-command': self.map_ifm_command,
+            'ifm-create-image-per-map': self.map_ifm_create_image_per_map,
             'ifm-helvetica-as-default': self.map_ifm_helvetica_as_default,
             'fig2dev-command': self.map_fig2dev_command,
+            'fig2dev-magnification-factor': self.map_fig2dev_magnification_factor,
         }
 
         data = {

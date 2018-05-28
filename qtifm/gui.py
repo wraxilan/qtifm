@@ -20,7 +20,7 @@ from PyQt5.QtCore import pyqtSlot, Qt, QFile, QRegExp, QSize, QThread, pyqtSigna
 from PyQt5.QtWidgets import (QAbstractItemView, QAction, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSplitter, QVBoxLayout, QWidget, QFrame, QDialogButtonBox, QGridLayout, QLineEdit,
-                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QListView, QLayout, QToolBar)
+                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QSpinBox, QLayout, QToolBar)
 
 images_path = Path(__file__).parent.joinpath('images')
 resources_path = Path(__file__).parent.joinpath('resources')
@@ -422,25 +422,27 @@ class MapView(QTabWidget):
             return
 
         # check maps
-        status, output = subprocess.getstatusoutput(self.config.map_ifm_command + ' --show=maps "' + str(file) + '"')
-        if status != 0:
-            self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
-            return
-
         self.valid = True
         sections = []
-        if output is not None and len(output) > 0:
-            lines = output.split('\n')
-            length = len(lines)
-            if length > 1:
-                header = False
-                for i in range(0, length):
-                    if header:
-                        line = lines[i].split('\t')
-                        if len(line) == 5:
-                            sections.append([line[0], line[4]])
-                    else:
-                        header = lines[i].startswith('No.')
+
+        if self.config.map_ifm_create_image_per_map:
+            status, output = subprocess.getstatusoutput(self.config.map_ifm_command + ' --show=maps "' + str(file) + '"')
+            if status != 0:
+                self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
+                return
+
+            if output is not None and len(output) > 0:
+                lines = output.split('\n')
+                length = len(lines)
+                if length > 1:
+                    header = False
+                    for i in range(0, length):
+                        if header:
+                            line = lines[i].split('\t')
+                            if len(line) == 5:
+                                sections.append([line[0], line[4]])
+                        else:
+                            header = lines[i].startswith('No.')
 
         if len(sections) > 0:
             for i in range(0, len(sections)):
@@ -464,7 +466,8 @@ class MapView(QTabWidget):
         if self.config.map_ifm_helvetica_as_default:
             style = ' -S helvetica'
         if section is not None:
-            cmd = self.config.map_ifm_command + style + ' -m=' + section + ' -f fig -o "' + str(fig) + '" "' + str(file) + '"'
+            cmd = self.config.map_ifm_command + style + ' -m=' + section + ' -f fig -o "' + str(fig) + '" "' + \
+                  str(file) + '"'
         else:
             cmd = self.config.map_ifm_command + style + ' -m -f fig -o "' + str(fig) + '" "' + str(file) + '"'
         status, output = subprocess.getstatusoutput(cmd)
@@ -474,9 +477,15 @@ class MapView(QTabWidget):
             return
 
         # create png files
+        magnification = 2.0
+        if self.config.map_fig2dev_magnification_factor is not None \
+                and 0 < self.config.map_fig2dev_magnification_factor < 10:
+            magnification = float(self.config.map_fig2dev_magnification_factor + 1) / 2
+            pass
         png = base.joinpath(file.stem + '_qtifm.png')
         status, output = subprocess.getstatusoutput(
-            self.config.map_fig2dev_command + ' -L png -m 2.0 -S 4 -b 5 "' + str(fig) + '" "' + str(png) + '"')
+            self.config.map_fig2dev_command + ' -L png -m ' + str(magnification) + '  -S 4 -b 5 "' + str(
+                fig) + '" "' + str(png) + '"')
         if status != 0:
             self.valid = False
             self.display_message(_('An error occurred while running FIG2DEV to create the images!'), error=output)
@@ -595,8 +604,13 @@ class SettingsDialog(QDialog):
         self.ifm_command_edit = self.__lineedit()
         self.fig2dev_command_edit = self.__lineedit()
 
-        self.dark_theme_check = QCheckBox(_('Syntax highlighting for dark themes'))
+        self.magnifcation_factor_edit = self.__spinbox()
+        self.magnifcation_factor_edit.setRange(1, 9)
+        self.magnifcation_factor_edit.setValue(1)
+
+        self.image_per_map_check = QCheckBox(_('Create an image for each map section'))
         self.helvetica_check = QCheckBox(_('Use Helvetica as default font'))
+        self.dark_theme_check = QCheckBox(_('Syntax highlighting for dark themes'))
 
         dlglyt = QVBoxLayout()
         dlglyt.setSizeConstraint(QLayout.SetFixedSize)
@@ -614,8 +628,12 @@ class SettingsDialog(QDialog):
         grid.addWidget(self.fig2dev_command_edit, 1, 1)
         grid.addWidget(self.__dirbutton(self.fig2dev_command_edit, False), 1, 2)
 
-        grid.addWidget(self.helvetica_check, 2, 1, 1, 2)
-        grid.addWidget(self.dark_theme_check, 3, 1, 1, 2)
+        grid.addWidget(self.__label(_('Magnification factor:')), 2, 0)
+        grid.addWidget(self.magnifcation_factor_edit, 2, 1, 1, 2)
+
+        grid.addWidget(self.image_per_map_check, 3, 1, 1, 2)
+        grid.addWidget(self.helvetica_check, 4, 1, 1, 2)
+        grid.addWidget(self.dark_theme_check, 5, 1, 1, 2)
 
         dlglyt.addSpacing(10)
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -632,6 +650,12 @@ class SettingsDialog(QDialog):
     @staticmethod
     def __lineedit():
         edit = QLineEdit()
+        edit.setFixedWidth(400)
+        return edit
+
+    @staticmethod
+    def __spinbox():
+        edit = QSpinBox()
         edit.setFixedWidth(400)
         return edit
 
@@ -768,18 +792,20 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         dialog.ifm_command_edit.setText(self.config.map_ifm_command)
         dialog.fig2dev_command_edit.setText(self.config.map_fig2dev_command)
+        dialog.magnifcation_factor_edit.setValue(self.config.map_fig2dev_magnification_factor)
         dialog.dark_theme_check.setChecked(self.config.editor_dark_theme)
         dialog.helvetica_check.setChecked(self.config.map_ifm_helvetica_as_default)
-
+        dialog.image_per_map_check.setChecked(self.config.map_ifm_create_image_per_map)
         dark_theme = self.config.editor_dark_theme
-        helveticy = self.config.map_ifm_helvetica_as_default
 
         result = dialog.exec_()
         if result == QDialog.Accepted:
             self.config.map_ifm_command = dialog.ifm_command_edit.text().strip()
             self.config.map_fig2dev_command = dialog.fig2dev_command_edit.text().strip()
+            self.config.map_fig2dev_magnification_factor = dialog.magnifcation_factor_edit.value()
             self.config.editor_dark_theme = dialog.dark_theme_check.isChecked()
             self.config.map_ifm_helvetica_as_default = dialog.helvetica_check.isChecked()
+            self.config.map_ifm_create_image_per_map = dialog.image_per_map_check.isChecked()
 
             if self.config.editor_dark_theme != dark_theme:
                 self.editor.reset_highlighter(self.config.editor_dark_theme)
