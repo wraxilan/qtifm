@@ -1,0 +1,156 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR ORGANIZATION
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2018-05-30 16:24+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: pygettext.py 1.5\n"
+
+
+msgid "About qtIFM"
+msgstr ""
+
+msgid "qtIFM"
+msgstr ""
+
+msgid "Copyright © Jens Kieselbach"
+msgstr ""
+
+msgid "Column:"
+msgstr ""
+
+msgid "Line:"
+msgstr ""
+
+msgid "Modified  /"
+msgstr ""
+
+msgid "There are unsaved changes. Continue anyway?"
+msgstr ""
+
+msgid "Open"
+msgstr ""
+
+msgid ""
+"An error occured while opening the selected IFM file!\n"
+"Maybe it isn't an IFM file. See console output for details."
+msgstr ""
+
+msgid "The file \""
+msgstr ""
+
+msgid "\" doesn't exist!"
+msgstr ""
+
+msgid ""
+"An error occured while writing the IFM file!\n"
+"See console output for details."
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Save as"
+msgstr ""
+
+msgid "New"
+msgstr ""
+
+msgid "Save the file to create the map images."
+msgstr ""
+
+msgid "The syntax of the map file isn't correct!"
+msgstr ""
+
+msgid "Map"
+msgstr ""
+
+msgid "An error occurred while running IFM to create the fig files!"
+msgstr ""
+
+msgid "An error occurred while running FIG2DEV to create the images!"
+msgstr ""
+
+msgid "Zoom: "
+msgstr ""
+
+msgid "Zoom: -"
+msgstr ""
+
+msgid "Choose directory"
+msgstr ""
+
+msgid "Choose file"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Create an image for each map section"
+msgstr ""
+
+msgid "Use Helvetica as default font"
+msgstr ""
+
+msgid "Syntax highlighting for dark themes"
+msgstr ""
+
+msgid "ifm command:"
+msgstr ""
+
+msgid "fig2dev command:"
+msgstr ""
+
+msgid "Magnification factor:"
+msgstr ""
+
+msgid "Exit"
+msgstr ""
+
+msgid "About"
+msgstr ""
+
+msgid "Open..."
+msgstr ""
+
+msgid "Save As..."
+msgstr ""
+
+msgid "Clear Items"
+msgstr ""
+
+msgid "Find Next"
+msgstr ""
+
+msgid "Find Previous"
+msgstr ""
+
+msgid "Normal Size"
+msgstr ""
+
+msgid "Zoom In"
+msgstr ""
+
+msgid "Zoom Out"
+msgstr ""
+
+msgid "File"
+msgstr ""
+
+msgid "Open recent"
+msgstr ""
+
+msgid "Help"
+msgstr ""
+
+msgid "Find:"
+msgstr ""
+

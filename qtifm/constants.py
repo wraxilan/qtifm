@@ -4,5 +4,5 @@
 # Constants
 #
 
-VERSION = '0.1'
+VERSION = '1.0'
 RECENT_FILES_COUNT = 10

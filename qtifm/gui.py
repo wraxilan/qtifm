@@ -14,13 +14,13 @@ import sys
 import traceback
 
 from pathlib import Path
-from PyQt5.QtGui import (QColor, QIcon, QFont, QPalette, QPixmap, QSyntaxHighlighter, QTextCursor, QTextCharFormat,
-                         QTextOption, QImage)
-from PyQt5.QtCore import pyqtSlot, Qt, QFile, QRegExp, QSize, QThread, pyqtSignal
-from PyQt5.QtWidgets import (QAbstractItemView, QAction, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
-                             QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QPushButton, QSizePolicy,
-                             QSplitter, QVBoxLayout, QWidget, QFrame, QDialogButtonBox, QGridLayout, QLineEdit,
-                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QSpinBox, QLayout, QToolBar)
+from PyQt5.QtGui import (QColor, QIcon, QPalette, QPixmap, QSyntaxHighlighter, QTextCursor, QTextCharFormat,
+                         QTextOption, QImage, QTextDocument)
+from PyQt5.QtCore import pyqtSlot, Qt,  QRegExp, pyqtSignal
+from PyQt5.QtWidgets import (QAction, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
+                             QMainWindow, QPlainTextEdit, QPushButton, QSizePolicy,
+                             QSplitter, QVBoxLayout, QWidget, QDialogButtonBox, QGridLayout, QLineEdit,
+                             QMessageBox, QScrollArea, QTextEdit, QTabWidget, QSpinBox, QLayout)
 
 images_path = Path(__file__).parent.joinpath('images')
 resources_path = Path(__file__).parent.joinpath('resources')
@@ -92,7 +92,7 @@ class Highlighter(QSyntaxHighlighter):
             keyword_format.setForeground(Qt.green)
         else:
             keyword_format.setForeground(Qt.darkGreen)
-        keyword_patterns = ["\\btitle\\b", "\\bmap\\b", "\\brequire\\b"]
+        keyword_patterns = ['\\btitle\\b', '\\bmap\\b', '\\brequire\\b']
         self.highlightingRules = [(QRegExp(pattern), keyword_format)
                                   for pattern in keyword_patterns]
 
@@ -202,7 +202,7 @@ class Editor(QTextEdit):
             self.clear()
             self.current_file = None
             try:
-                with open(path, 'r', encoding="utf-8") as file:
+                with open(path, 'r', encoding='utf-8') as file:
                     self.editor_init = True
                     self.insertPlainText(file.read())
                     self.setFocus()
@@ -223,7 +223,7 @@ class Editor(QTextEdit):
             self.update_state(self.current_file)
         elif path is not None:
             QMessageBox.critical(self, _('Open'), _(
-                'The file "' + str(path) + '" doesn\'t exist!'),
+                'The file "') + str(path) + _('" doesn\'t exist!'),
                                  QMessageBox.Ok)
 
     def update_state(self, path=None):
@@ -267,7 +267,7 @@ class Editor(QTextEdit):
     def save_file(self, update=False):
         if self.current_file is not None:
             try:
-                with open(self.current_file, 'w', encoding="utf-8") as file:
+                with open(self.current_file, 'w', encoding='utf-8') as file:
                     file.write(self.toPlainText())
                     self.editor_init = True
                     self.text_changed()
@@ -413,7 +413,6 @@ class MapView(QTabWidget):
         self.valid = False
 
         base = file.parent
-        fig = base.joinpath(file.stem + '_qtifm.fig')
 
         # check syntax
         status, output = subprocess.getstatusoutput(self.config.map_ifm_command + ' "' + str(file) + '"')
@@ -450,9 +449,9 @@ class MapView(QTabWidget):
                 if i < len(old_viewers):
                     scale_factor = old_viewers[i].scale_factor
                 section = sections[i]
-                self.create_map_section(file, base, fig, section[0], section[1], scale_factor)
+                self.create_map_section(file, base, section[0], section[1], scale_factor)
         else:
-            self.create_map_section(file, base, fig, None, _('Map'), None)
+            self.create_map_section(file, base, None, _('Map'), None)
 
         if 0 <= selected_index < self.count():
             self.setCurrentIndex(selected_index)
@@ -460,11 +459,17 @@ class MapView(QTabWidget):
         self.last_file = file
         self.map_view_changed_signal.emit()
 
-    def create_map_section(self, file, base, fig, section, name, scale_factor):
+    def create_map_section(self, file, base, section, name, scale_factor):
         # create fig files
         style = ''
         if self.config.map_ifm_helvetica_as_default:
             style = ' -S helvetica'
+
+        if section is not None:
+            fig = base.joinpath(file.stem + '_qtifm_' + section + '.fig')
+        else:
+            fig = base.joinpath(file.stem + '_qtifm.fig')
+
         if section is not None:
             cmd = self.config.map_ifm_command + style + ' -m=' + section + ' -f fig -o "' + str(fig) + '" "' + \
                   str(file) + '"'
@@ -482,7 +487,12 @@ class MapView(QTabWidget):
                 and 0 < self.config.map_fig2dev_magnification_factor < 10:
             magnification = float(self.config.map_fig2dev_magnification_factor + 1) / 2
             pass
-        png = base.joinpath(file.stem + '_qtifm.png')
+
+        if section is not None:
+            png = base.joinpath(file.stem + '_qtifm' + section + '.png')
+        else:
+            png = base.joinpath(file.stem + '_qtifm.png')
+
         status, output = subprocess.getstatusoutput(
             self.config.map_fig2dev_command + ' -L png -m ' + str(magnification) + '  -S 4 -b 5 "' + str(
                 fig) + '" "' + str(png) + '"')
@@ -578,10 +588,10 @@ class DirectoryFieldButton(QPushButton):
     def select_dir(self):
 
         if self.directories_only:
-            filename = QFileDialog.getExistingDirectory(self, 'Choose directory', self.line_edit.text(),
+            filename = QFileDialog.getExistingDirectory(self, _('Choose directory'), self.line_edit.text(),
                                                         QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
         else:
-            filename, _ = QFileDialog.getOpenFileName(self, 'Choose file', self.line_edit.text(),
+            filename, _ = QFileDialog.getOpenFileName(self, _('Choose file'), self.line_edit.text(),
                                                       options=QFileDialog.DontUseNativeDialog)
         if filename:
             file = Path(filename)
@@ -695,6 +705,11 @@ class MainWindow(QMainWindow):
         self.clear_recent_files_action = QAction(_('Clear Items'))
         self.settings_action = QAction(_('Settings'))
 
+        self.find_next_action = QAction(QIcon.fromTheme('down'), _('Find Next'))
+        self.find_next_action.setShortcut('F3')
+        self.find_previous_action = QAction(QIcon.fromTheme('up'), _('Find Previous'))
+        self.find_previous_action.setShortcut('Ctrl+F3')
+
         self.normal_size_action = QAction(QIcon.fromTheme('zoom-original'), _('Normal Size'))
         self.normal_size_action.setShortcut('Ctrl+0')
         self.zoom_in_action = QAction(QIcon.fromTheme('zoom-in'), _('Zoom In'))
@@ -717,6 +732,14 @@ class MainWindow(QMainWindow):
         help_menu = self.menuBar().addMenu(_('Help'))
         help_menu.addAction(self.about_action)
 
+        # Widgets
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setHandleWidth(5)
+        self.editor = Editor(self, self.config.editor_dark_theme)
+        self.map_view = MapView(self, self.config)
+        self.find_edit = QLineEdit()
+        self.find_edit.setFixedWidth(200)
+
         # Tool bar
         tool_bar = self.addToolBar('Edit')
         tool_bar.setFloatable(False)
@@ -726,15 +749,14 @@ class MainWindow(QMainWindow):
         tool_bar.addAction(self.save_action)
         tool_bar.addAction(self.saveas_action)
         tool_bar.addSeparator()
+        tool_bar.addWidget(QLabel(_('Find:') + ' '))
+        tool_bar.addWidget(self.find_edit)
+        tool_bar.addAction(self.find_next_action)
+        tool_bar.addAction(self.find_previous_action)
+        tool_bar.addSeparator()
         tool_bar.addAction(self.normal_size_action)
         tool_bar.addAction(self.zoom_in_action)
         tool_bar.addAction(self.zoom_out_action)
-
-        # Widgets
-        self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.setHandleWidth(5)
-        self.editor = Editor(self, self.config.editor_dark_theme)
-        self.map_view = MapView(self, self.config)
 
         # Connects
         self.new_action.triggered.connect(self.editor.new_file)
@@ -748,11 +770,16 @@ class MainWindow(QMainWindow):
         self.normal_size_action.triggered.connect(self.map_view.normal_size)
         self.zoom_in_action.triggered.connect(self.map_view.zoom_in)
         self.zoom_out_action.triggered.connect(self.map_view.zoom_out)
+        self.find_next_action.triggered.connect(self.find_next)
+        self.find_previous_action.triggered.connect(self.find_previous)
 
         self.editor.map_changed_signal.connect(self.map_view.create_maps)
         self.editor.map_cleared_signal.connect(self.map_view.clear_maps)
 
         self.map_view.map_view_changed_signal.connect(self.enable_map_actions)
+
+        self.find_edit.textChanged.connect(self.find_edit_text_changed)
+        self.find_edit.returnPressed.connect(self.find_next)
 
         # Layout
         central_widget = QWidget()
@@ -774,6 +801,9 @@ class MainWindow(QMainWindow):
 
         if self.config.editor_last_file is not None:
             self.editor.open_path(self.config.editor_last_file, check_modified=False)
+
+        self.find_next_action.setEnabled(False)
+        self.find_previous_action.setEnabled(False)
 
     @pyqtSlot()
     def enable_map_actions(self):
@@ -809,6 +839,24 @@ class MainWindow(QMainWindow):
 
             if self.config.editor_dark_theme != dark_theme:
                 self.editor.reset_highlighter(self.config.editor_dark_theme)
+
+    @pyqtSlot()
+    def find_edit_text_changed(self):
+        flag = len(self.find_edit.text()) > 0
+        self.find_next_action.setEnabled(flag)
+        self.find_previous_action.setEnabled(flag)
+
+    @pyqtSlot()
+    def find_next(self):
+        text = self.find_edit.text()
+        if len(text) > 0:
+            self.editor.find(text)
+
+    @pyqtSlot()
+    def find_previous(self):
+        text = self.find_edit.text()
+        if len(text) > 0:
+            self.editor.find(text, QTextDocument.FindBackward)
 
     def closeEvent(self, event):
         if self.editor.abort_if_modified(_('Exit')):
