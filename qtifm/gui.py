@@ -132,6 +132,7 @@ class Editor(QTextEdit):
         self.setStyleSheet('font-family: "Monospace";')
         self.highlighter = Highlighter(dark_theme, self.document())
         self.setWordWrapMode(QTextOption.NoWrap)
+        self.setTabStopWidth(int(self.tabStopWidth() / 2))
 
         self.current_file = None
         self.current_file_name = ''
