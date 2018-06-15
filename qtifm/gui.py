@@ -426,7 +426,8 @@ class MapView(QTabWidget):
         sections = []
 
         if self.config.map_ifm_create_image_per_map:
-            status, output = subprocess.getstatusoutput(self.config.map_ifm_command + ' --show=maps "' + str(file) + '"')
+            status, output = subprocess.getstatusoutput(
+                self.config.map_ifm_command + ' --show=maps "' + str(file) + '"')
             if status != 0:
                 self.display_message(_('The syntax of the map file isn\'t correct!'), error=output)
                 return
@@ -572,6 +573,7 @@ class MapView(QTabWidget):
         if error is not None:
             label2 = QLabel('<html><code>' + error + '</code></html>')
             label2.setAlignment(Qt.AlignCenter)
+            label2.setWordWrap(True)
             layout.addWidget(label2)
         layout.addStretch(1)
         self.addTab(widget, _('Map'))
