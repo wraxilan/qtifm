@@ -377,7 +377,7 @@ class MapView(QTabWidget):
     def __init__(self, mainwin, config, *args):
         QTabWidget.__init__(self, *args)
 
-        self.setStyleSheet("QTabWidget::pane { margin: 0; }")
+        # self.setStyleSheet("QTabWidget::pane { margin: 0; }")
         self.main_window = mainwin
         self.config = config
         self.valid = False
